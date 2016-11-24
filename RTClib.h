@@ -56,20 +56,48 @@ protected:
 };
 
 // RTC based on the DS1307 chip connected via I2C and the Wire library
-enum Ds1307SqwPinMode { OFF = 0x00, ON = 0x80, SquareWave1HZ = 0x10, SquareWave4kHz = 0x11, SquareWave8kHz = 0x12, SquareWave32kHz = 0x13 };
+//enum Ds1307SqwPinMode { OFF = 0x00, ON = 0x80, SquareWave1HZ = 0x10, SquareWave4kHz = 0x11, SquareWave8kHz = 0x12, SquareWave32kHz = 0x13 };
 
-class RTC_DS1307 {
-public:
-    static uint8_t begin(void);
-    static void adjust(const DateTime& dt);
+class RTC_DS3231 {
+		// new for DS3231
+		public:
+		DS3231(uint8_t data_pin, uint8_t sclk_pin);
+		void	begin();
+		static void adjust(const DateTime& dt);
     uint8_t isrunning(void);
     static DateTime now();
-    static Ds1307SqwPinMode readSqwPinMode();
-    static void writeSqwPinMode(Ds1307SqwPinMode mode);
-    uint8_t readnvram(uint8_t address);
-    void readnvram(uint8_t* buf, uint8_t size, uint8_t address);
-    void writenvram(uint8_t address, uint8_t data);
-    void writenvram(uint8_t address, uint8_t* buf, uint8_t size);
+
+		char	*getTimeStr(uint8_t format=FORMAT_LONG);
+		char	*getDateStr(uint8_t slformat=FORMAT_LONG, uint8_t eformat=FORMAT_LITTLEENDIAN, char divider='.');
+		char	*getDOWStr(uint8_t format=FORMAT_LONG);
+		char	*getMonthStr(uint8_t format=FORMAT_LONG);
+		long	getUnixTime(Time t);
+
+		void	enable32KHz(bool enable);
+		void	setOutput(byte enable);
+		void	setSQWRate(int rate);
+		float	getTemp();
+
+	private:
+		uint8_t _scl_pin;
+		uint8_t _sda_pin;
+		uint8_t _burstArray[7];
+		boolean	_use_hw;
+
+		void	_sendStart(byte addr);
+		void	_sendStop();
+		void	_sendAck();
+		void	_sendNack();
+		void	_waitForAck();
+		uint8_t	_readByte();
+		void	_writeByte(uint8_t value);
+		void	_burstRead();
+		uint8_t	_readRegister(uint8_t reg);
+		void 	_writeRegister(uint8_t reg, uint8_t value);
+		uint8_t	_decode(uint8_t value);
+		uint8_t	_decodeH(uint8_t value);
+		uint8_t	_decodeY(uint8_t value);
+		uint8_t	_encode(uint8_t vaule);
 };
 
 // RTC using the internal millis() clock, has to be initialized before use

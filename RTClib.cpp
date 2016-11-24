@@ -1,20 +1,40 @@
 // Code by JeeLabs http://news.jeelabs.org/code/
+// and modified by Quantumsized 
 // Released to the public domain! Enjoy!
 
+#include "DS3231.h"
 #include <Wire.h>
 #include "RTClib.h"
-#ifdef __AVR__
- #include <avr/pgmspace.h>
- #define WIRE Wire
-#else
- #define PROGMEM
- #define pgm_read_byte(addr) (*(const unsigned char *)(addr))
- #define WIRE Wire1
+
+// Include hardware-specific functions for the correct MCU
+#if defined(__AVR__)
+	#include "hardware/avr/HW_AVR.h"
+#elif defined(__PIC32MX__)
+  #include "hardware/pic32/HW_PIC32.h"
+#elif defined(__arm__)
+	#include "hardware/arm/HW_ARM.h"
 #endif
 
-#define DS1307_ADDRESS  0x68
-#define DS1307_CONTROL  0x07
-#define DS1307_NVRAM    0x08
+#define DS3231_I2C_ADDRESS 0x68
+#define REG_SEC		0x00
+#define REG_MIN		0x01
+#define REG_HOUR	0x02
+#define REG_DOW		0x03
+#define REG_DATE	0x04
+#define REG_MON		0x05
+#define REG_YEAR	0x06
+#define DS3231_ALARM1SEC  0x07
+#define DS3231_ALARM1MIN    0x08
+#define DS3231_ALARM1HOU  0x09
+#define DS3231_ALARM1DAY    0x0a
+#define DS3231_ALARM2MIN    0x0b
+#define DS3231_ALARM2HOU  0x0c
+#define DS3231_ALARM2DAY    0x0d
+#define REG_CON		0x0e
+#define REG_STATUS	0x0f
+#define REG_AGING	0x10
+#define REG_TEMPM	0x11
+#define REG_TEMPL	0x12
 #define SECONDS_PER_DAY 86400L
 
 #define SECONDS_FROM_1970_TO_2000 946684800
@@ -33,7 +53,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 // utility code, some of this could be exposed in the DateTime API if needed
 
-const uint8_t daysInMonth [] PROGMEM = { 31,28,31,30,31,30,31,31,30,31,30,31 };
+const uint8_t daysInMonth[] = { 31,28,31,30,31,30,31,31,30,31,30,31 };
 
 // number of days since 2000/01/01, valid for 2001..2099
 static uint16_t date2days(uint16_t y, uint8_t m, uint8_t d) {
@@ -215,40 +235,71 @@ TimeSpan TimeSpan::operator-(const TimeSpan& right) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// RTC_DS1307 implementation
+// RTC_DS3231 implementation changing to
 
 static uint8_t bcd2bin (uint8_t val) { return val - 6 * (val >> 4); }
 static uint8_t bin2bcd (uint8_t val) { return val + 6 * (val / 10); }
 
-uint8_t RTC_DS1307::begin(void) {
+/*uint8_t RTC_DS3231::begin(void) {
   return 1;
+}*/
+//May need this insted of the above
+RTC_DS3231::DS3231(uint8_t data_pin, uint8_t sclk_pin) {
+	_sda_pin = data_pin;
+	_scl_pin = sclk_pin;
+	return 1;
 }
 
-uint8_t RTC_DS1307::isrunning(void) {
-  WIRE.beginTransmission(DS1307_ADDRESS);
-  WIRE._I2C_WRITE(0);
+uint8_t RTC_DS3231::isrunning(void) {
+  WIRE.beginTransmission(DS3231_I2C_ADDRESS);
+  WIRE.WRITE(0);
   WIRE.endTransmission();
 
-  WIRE.requestFrom(DS1307_ADDRESS, 1);
-  uint8_t ss = WIRE._I2C_READ();
+  WIRE.requestFrom(DS3231_I2C_ADDRESS, 1);
+  uint8_t ss = WIRE.READ();
   return !(ss>>7);
 }
 
-void RTC_DS1307::adjust(const DateTime& dt) {
+void RTC_DS3231::adjust(const DateTime& dt) {
+	Wire.beginTransmission(DS3231_I2C_ADDRESS);
+  Wire.write(0);
+  Wire.write(decToBcd(dt.second()));
+  Wire.write(decToBcd(dt.minute()));
+  Wire.write(decToBcd(dt.hour()));
+  Wire.write(decToBcd(dt.dayOfWeek()));
+  Wire.write(decToBcd(dt.day));
+  Wire.write(decToBcd(dt.month()));
+  Wire.write(bin2bcd(dt.year() - 2000));
+  WIRE.endTransmission();
+	/* original
   WIRE.beginTransmission(DS1307_ADDRESS);
   WIRE._I2C_WRITE(0);
   WIRE._I2C_WRITE(bin2bcd(dt.second()));
   WIRE._I2C_WRITE(bin2bcd(dt.minute()));
   WIRE._I2C_WRITE(bin2bcd(dt.hour()));
-  WIRE._I2C_WRITE(bin2bcd(0));
+  WIRE._I2C_WRITE(bin2bcd(dayOfWeek));
   WIRE._I2C_WRITE(bin2bcd(dt.day()));
   WIRE._I2C_WRITE(bin2bcd(dt.month()));
   WIRE._I2C_WRITE(bin2bcd(dt.year() - 2000));
   WIRE._I2C_WRITE(0);
-  WIRE.endTransmission();
+  WIRE.endTransmission();*/
 }
 
-DateTime RTC_DS1307::now() {
+DateTime RTC_DS3231::now() {
+	Wire.beginTransmission(DS3231_I2C_ADDRESS);
+  Wire.write(0); // set DS3231 register pointer to 00h
+  Wire.endTransmission();
+  Wire.requestFrom(DS3231_I2C_ADDRESS, 7);
+  // request seven bytes of data from DS3231 starting from register 00h
+  uint8_t ss = bcd2bin(Wire.read() & 0x7f);
+  uint8_t mm = bcd2bin(Wire.read());
+  uint8_t hh = bcd2bin(Wire.read() & 0x3f);
+  uint8_t dow = bcd2bin(Wire.read());
+  uint8_t d = bcd2bin(Wire.read());
+  uint8_t m = bcd2bin(Wire.read());
+  uint16_t y = bcd2bin(Wire.read()) + 2000;
+	
+	/* original
   WIRE.beginTransmission(DS1307_ADDRESS);
   WIRE._I2C_WRITE(0);	
   WIRE.endTransmission();
@@ -261,62 +312,140 @@ DateTime RTC_DS1307::now() {
   uint8_t d = bcd2bin(WIRE._I2C_READ());
   uint8_t m = bcd2bin(WIRE._I2C_READ());
   uint16_t y = bcd2bin(WIRE._I2C_READ()) + 2000;
-  
-  return DateTime (y, m, d, hh, mm, ss);
+  */
+  return DateTime (y, m, d, dow, hh, mm, ss);
 }
 
-Ds1307SqwPinMode RTC_DS1307::readSqwPinMode() {
+/*Ds3231SqwPinMode RTC_DS3231::readSqwPinMode() {
   int mode;
 
-  WIRE.beginTransmission(DS1307_ADDRESS);
-  WIRE._I2C_WRITE(DS1307_CONTROL);
+  WIRE.beginTransmission(DS3231_I2C_ADDRESS);
+  WIRE.WRITE(DS3231_CONTROL);
   WIRE.endTransmission();
   
-  WIRE.requestFrom((uint8_t)DS1307_ADDRESS, (uint8_t)1);
-  mode = WIRE._I2C_READ();
+  WIRE.requestFrom((uint8_t)DS3231_I2C_ADDRESS, (uint8_t)1);
+  mode = WIRE.READ();
 
   mode &= 0x93;
-  return static_cast<Ds1307SqwPinMode>(mode);
+  return static_cast<Ds3231SqwPinMode>(mode);
 }
 
-void RTC_DS1307::writeSqwPinMode(Ds1307SqwPinMode mode) {
-  WIRE.beginTransmission(DS1307_ADDRESS);
-  WIRE._I2C_WRITE(DS1307_CONTROL);
-  WIRE._I2C_WRITE(mode);
+void RTC_DS3231::writeSqwPinMode(Ds3231SqwPinMode mode) {
+  WIRE.beginTransmission(DS3231_I2C_ADDRESS);
+  WIRE.WRITE(DS3231_CONTROL);
+  WIRE.WRITE(mode);
   WIRE.endTransmission();
 }
 
-void RTC_DS1307::readnvram(uint8_t* buf, uint8_t size, uint8_t address) {
-  int addrByte = DS1307_NVRAM + address;
-  WIRE.beginTransmission(DS1307_ADDRESS);
-  WIRE._I2C_WRITE(addrByte);
+void RTC_DS3231::readnvram(uint8_t* buf, uint8_t size, uint8_t address) {
+  int addrByte = DS3231_NVRAM + address;
+  WIRE.beginTransmission(DS3231_I2C_ADDRESS);
+  WIRE.WRITE(addrByte);
   WIRE.endTransmission();
   
-  WIRE.requestFrom((uint8_t) DS1307_ADDRESS, size);
+  WIRE.requestFrom((uint8_t) DS3231_I2C_ADDRESS, size);
   for (uint8_t pos = 0; pos < size; ++pos) {
-    buf[pos] = WIRE._I2C_READ();
+    buf[pos] = WIRE.READ();
   }
 }
 
-void RTC_DS1307::writenvram(uint8_t address, uint8_t* buf, uint8_t size) {
-  int addrByte = DS1307_NVRAM + address;
-  WIRE.beginTransmission(DS1307_ADDRESS);
-  WIRE._I2C_WRITE(addrByte);
+void RTC_DS3231::writenvram(uint8_t address, uint8_t* buf, uint8_t size) {
+  int addrByte = DS3231_NVRAM + address;
+  WIRE.beginTransmission(DS3231_I2C_ADDRESS);
+  WIRE.WRITE(addrByte);
   for (uint8_t pos = 0; pos < size; ++pos) {
-    WIRE._I2C_WRITE(buf[pos]);
+    WIRE.WRITE(buf[pos]);
   }
   WIRE.endTransmission();
 }
 
-uint8_t RTC_DS1307::readnvram(uint8_t address) {
+uint8_t RTC_DS3231::readnvram(uint8_t address) {
   uint8_t data;
   readnvram(&data, 1, address);
   return data;
 }
 
-void RTC_DS1307::writenvram(uint8_t address, uint8_t data) {
+void RTC_DS3231::writenvram(uint8_t address, uint8_t data) {
   writenvram(address, &data, 1);
+}*/
+
+////////////////////////////////////////////////////////////////////////////////
+// RTC_3231 extended functions
+
+char *RTC_DS3231::getDOWStr(uint8_t format)
+{
+	char *output = "xxxxxxxxxx";
+	char *daysLong[]  = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+	char *daysShort[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+	Time t;
+	t=getTime();
+	if (format == FORMAT_SHORT)
+		output = daysShort[t.dow-1];
+	else
+		output = daysLong[t.dow-1];
+	return output;
 }
+
+char *RTC_DS3231::getMonthStr(uint8_t format)
+{
+	char *output= "xxxxxxxxx";
+	char *monthLong[]  = {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"};
+	char *monthShort[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+	Time t;
+	t=getTime();
+	if (format == FORMAT_SHORT)
+		output = monthShort[t.mon-1];
+	else
+		output = monthLong[t.mon-1];
+	return output;
+}
+
+long RTC_DS3231::getUnixTime(Time t)
+{
+	uint16_t	dc;
+
+	dc = t.date;
+	for (uint8_t i = 0; i<(t.mon-1); i++)
+		dc += dim[i];
+	if ((t.mon > 2) && (((t.year-2000) % 4) == 0))
+		++dc;
+	dc = dc + (365 * (t.year-2000)) + (((t.year-2000) + 3) / 4) - 1;
+
+	return ((((((dc * 24L) + t.hour) * 60) + t.min) * 60) + t.sec) + SEC_1970_TO_2000;
+
+}
+
+void RTC_DS3231::enable32KHz(bool enable)
+{
+  uint8_t _reg = _readRegister(REG_STATUS);
+  _reg &= ~(1 << 3);
+  _reg |= (enable << 3);
+  _writeRegister(REG_STATUS, _reg);
+}
+
+void RTC_DS3231::setOutput(byte enable)
+{
+  uint8_t _reg = _readRegister(REG_CON);
+  _reg &= ~(1 << 2);
+  _reg |= (enable << 2);
+  _writeRegister(REG_CON, _reg);
+}
+
+void RTC_DS3231::setSQWRate(int rate)
+{
+  uint8_t _reg = _readRegister(REG_CON);
+  _reg &= ~(3 << 3);
+  _reg |= (rate << 3);
+  _writeRegister(REG_CON, _reg);
+}
+
+float RTC_DS3231::getTemp()
+{
+	uint8_t _msb = _readRegister(REG_TEMPM);
+	uint8_t _lsb = _readRegister(REG_TEMPL);
+	return (float)_msb + ((_lsb >> 6) * 0.25f);
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // RTC_Millis implementation
