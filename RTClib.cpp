@@ -4,7 +4,7 @@
 
 #include "DS3231.h"
 #include <Wire.h>
-#include "RTClib.h"
+#include "RTCLib.h"
 
 // Include hardware-specific functions for the correct MCU
 #if defined(__AVR__)
