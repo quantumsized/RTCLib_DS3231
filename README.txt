@@ -1,4 +1,4 @@
-This is a diversion from a the forked project of JeeLab's fantastic real time clock library for Arduino.
+This is a diversion from the forked project of JeeLab's fantastic real time clock library for Arduino.
 
 This version has been adapted to work with the DS3231 RTC due to the simple foundation previously layed and the greater accuracy of the DS3231.
 
